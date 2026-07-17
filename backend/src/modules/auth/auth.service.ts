@@ -47,9 +47,9 @@ export class AuthService {
       return user;
     });
 
-    const token = signToken({ userId: result.id, email: result.email });
+    const accessToken = signToken({ userId: result.id, email: result.email });
     return {
-      token,
+      accessToken,
       user: { id: result.id, email: result.email },
     };
   }
@@ -68,9 +68,9 @@ export class AuthService {
       throw new UnauthorizedError('Invalid email or password');
     }
 
-    const token = signToken({ userId: user.id, email: user.email });
+    const accessToken = signToken({ userId: user.id, email: user.email });
     return {
-      token,
+      accessToken,
       user: { id: user.id, email: user.email },
     };
   }

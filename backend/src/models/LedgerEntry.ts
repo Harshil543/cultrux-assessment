@@ -52,7 +52,7 @@ export function initLedgerEntryModel(sequelize: Sequelize): typeof LedgerEntry {
         field: 'delta_credits',
       },
       entryType: {
-        type: DataTypes.ENUM('PURCHASE', 'SPEND'),
+        type: DataTypes.ENUM('PURCHASE', 'SPEND', 'REFUND', 'CHARGEBACK'),
         allowNull: false,
         field: 'entry_type',
       },

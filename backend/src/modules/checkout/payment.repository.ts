@@ -1,7 +1,7 @@
 import { Transaction } from 'sequelize';
 import { Payment, PaymentCreationAttributes } from '../../models/Payment';
 import { StripeWebhookEvent } from '../../models/StripeWebhookEvent';
-import { PaymentStatus } from '../../common/constants';
+import { PAYMENT_STATUS, PaymentStatus } from '../../common/constants';
 
 export class PaymentRepository {
   async create(data: PaymentCreationAttributes, transaction?: Transaction): Promise<Payment> {
@@ -14,6 +14,17 @@ export class PaymentRepository {
     transaction?: Transaction,
   ): Promise<void> {
     await Payment.update({ stripeSessionId }, { where: { id: paymentId }, transaction });
+  }
+
+  async updateStripePaymentIntentId(
+    paymentId: number,
+    stripePaymentIntentId: string,
+    transaction?: Transaction,
+  ): Promise<void> {
+    await Payment.update(
+      { stripePaymentIntentId },
+      { where: { id: paymentId }, transaction },
+    );
   }
 
   async findById(id: number, transaction?: Transaction): Promise<Payment | null> {
@@ -34,11 +45,53 @@ export class PaymentRepository {
     });
   }
 
+  async findByStripePaymentIntentId(
+    stripePaymentIntentId: string,
+    transaction?: Transaction,
+  ): Promise<Payment | null> {
+    return Payment.findOne({
+      where: { stripePaymentIntentId },
+      lock: transaction ? transaction.LOCK.UPDATE : undefined,
+      transaction,
+    });
+  }
+
+  async findByUserIdempotencyKey(
+    userId: number,
+    clientIdempotencyKey: string,
+    transaction?: Transaction,
+  ): Promise<Payment | null> {
+    return Payment.findOne({
+      where: { userId, clientIdempotencyKey },
+      lock: transaction ? transaction.LOCK.UPDATE : undefined,
+      transaction,
+    });
+  }
+
   async markCompleted(paymentId: number, transaction: Transaction): Promise<void> {
     await Payment.update(
-      { status: 'completed' as PaymentStatus, completedAt: new Date() },
+      { status: PAYMENT_STATUS.COMPLETED, completedAt: new Date(), failureReason: null },
       { where: { id: paymentId }, transaction },
     );
+  }
+
+  async markStatus(
+    paymentId: number,
+    status: PaymentStatus,
+    failureReason: string | null,
+    transaction: Transaction,
+  ): Promise<void> {
+    const patch: {
+      status: PaymentStatus;
+      failureReason: string | null;
+      completedAt?: Date | null;
+    } = { status, failureReason };
+
+    if (status === PAYMENT_STATUS.COMPLETED) {
+      patch.completedAt = new Date();
+    }
+
+    await Payment.update(patch, { where: { id: paymentId }, transaction });
   }
 
   async tryInsertWebhookEvent(

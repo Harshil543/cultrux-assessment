@@ -31,6 +31,15 @@ export class WalletController {
       next(err);
     }
   };
+
+  reconcile = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+    try {
+      const data = await this.walletService.reconcile(req.user!.userId);
+      sendSuccess(res, data);
+    } catch (err) {
+      next(err);
+    }
+  };
 }
 
 export { ledgerQuerySchema };

@@ -7,7 +7,15 @@ export class CheckoutController {
 
   createSession = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-      const data = await this.checkoutService.createCheckoutSession(req.user!.userId, req.body);
+      const idempotencyKeyHeader = req.headers['idempotency-key'];
+      const clientIdempotencyKey =
+        typeof idempotencyKeyHeader === 'string' ? idempotencyKeyHeader : null;
+
+      const data = await this.checkoutService.createCheckoutSession(
+        req.user!.userId,
+        req.body,
+        clientIdempotencyKey,
+      );
       sendSuccess(res, data, 201);
     } catch (err) {
       next(err);

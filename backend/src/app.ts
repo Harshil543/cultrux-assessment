@@ -1,5 +1,7 @@
 import express, { Express, Request, Response } from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import { env } from './config/env';
 import { errorHandler } from './common/middleware/errorHandler';
 import authRoutes from './modules/auth/auth.routes';
 import currencyRoutes from './modules/currency/currency.routes';
@@ -11,7 +13,27 @@ import campaignRoutes from './modules/campaigns/campaign.routes';
 export function createApp(): Express {
   const app = express();
 
-  app.use(cors({ origin: true, credentials: true }));
+  const allowedOrigins = new Set([
+    env.appUrl,
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ]);
+
+  app.use(
+    cors({
+      origin(origin, callback) {
+        // Allow non-browser clients (no Origin) and configured frontend origins
+        if (!origin || allowedOrigins.has(origin)) {
+          callback(null, true);
+          return;
+        }
+        callback(new Error(`CORS blocked for origin: ${origin}`));
+      },
+      credentials: true,
+    }),
+  );
+
+  app.use(cookieParser());
 
   // Stripe webhook needs raw body for signature verification
   app.use('/webhooks', express.raw({ type: 'application/json' }), webhookRoutes);

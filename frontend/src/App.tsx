@@ -10,7 +10,9 @@ function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="layout">
       <header className="header">
-        <div className="brand">Cultrux Credits</div>
+        <Link to="/wallet" className="brand">
+          Cultrux Credits
+        </Link>
         {user && (
           <nav className="nav">
             <Link to="/wallet">Wallet</Link>
@@ -28,8 +30,9 @@ function Shell({ children }: { children: React.ReactNode }) {
 }
 
 function Private({ children }: { children: React.ReactNode }) {
-  const { token } = useAuth();
-  if (!token) return <Navigate to="/login" replace />;
+  const { isAuthenticated, authReady } = useAuth();
+  if (!authReady) return <div className="main muted">Loading…</div>;
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
   return <Shell>{children}</Shell>;
 }
 

@@ -13,6 +13,14 @@ Controller → Service → Repository
 - **Controller** — HTTP request/response
 - **common/** — errors, middleware, auth utils, money helpers, constants
 
+### Auth (HTTP-only cookie)
+
+- Login/signup sets an **HTTP-only**, **SameSite**, access-token cookie (`cultrux_access_token`)
+- Cookie is **Secure** in production (`NODE_ENV=production`); plain HTTP localhost uses `Secure=false` + `SameSite=Lax`
+- Frontend uses `fetch(..., { credentials: 'include' })` — no JWT in `localStorage`
+- `POST /auth/logout` clears the cookie
+- Bearer token still accepted as a fallback for scripts/tests
+
 ## Prerequisites
 
 - Node.js 20+

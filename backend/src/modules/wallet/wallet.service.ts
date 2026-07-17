@@ -51,4 +51,35 @@ export class WalletService {
       }),
     };
   }
+
+  /**
+   * Prove balance_credits === SUM(ledger.delta_credits) for every currency in the wallet.
+   */
+  async reconcile(userId: number) {
+    const wallet = await this.wallets.findByUserId(userId);
+    if (!wallet) {
+      throw new NotFoundError('Wallet not found');
+    }
+
+    const balances = await this.wallets.findBalancesByWalletId(wallet.id);
+    const currencies = await Promise.all(
+      balances.map(async (b) => {
+        const currency = b.get('currency') as Currency | undefined;
+        const ledgerSum = await this.wallets.sumLedgerForCurrency(wallet.id, b.currencyId);
+        return {
+          currencyId: b.currencyId,
+          code: currency?.code,
+          balanceCredits: b.balanceCredits,
+          ledgerSum,
+          match: b.balanceCredits === ledgerSum,
+        };
+      }),
+    );
+
+    return {
+      walletId: wallet.id,
+      ok: currencies.every((c) => c.match),
+      currencies,
+    };
+  }
 }

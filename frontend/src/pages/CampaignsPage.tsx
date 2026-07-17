@@ -56,10 +56,12 @@ export default function CampaignsPage() {
   }
 
   return (
-    <div className="stack gap-lg">
-      <div>
+    <div className="stack gap-sm">
+      <div className="page-intro">
         <h1>Campaigns</h1>
         <p className="muted">Funded only with Campaign Credits. Other currencies are rejected.</p>
+        {error && <p className="error">{error}</p>}
+        {message && <p className="info">{message}</p>}
       </div>
 
       <section className="panel">
@@ -83,48 +85,49 @@ export default function CampaignsPage() {
         </form>
       </section>
 
-      {error && <p className="error">{error}</p>}
-      {message && <p className="info">{message}</p>}
-
       <section>
-        <h2>Your campaigns</h2>
-        <table>
-          <thead>
-            <tr>
-              <th>ID</th>
-              <th>Title</th>
-              <th>Credits</th>
-              <th>Status</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((c) => (
-              <tr key={c.id}>
-                <td>{c.id}</td>
-                <td>{c.title}</td>
-                <td>{c.fundAmountCredits}</td>
-                <td>{c.status}</td>
-                <td>
-                  {c.status === 'draft' ? (
-                    <button type="button" onClick={() => fund(c.id)}>
-                      Fund
-                    </button>
-                  ) : (
-                    <span className="muted">Funded</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {items.length === 0 && (
+        <div className="section-head">
+          <h2>Your campaigns</h2>
+        </div>
+        <div className="table-wrap">
+          <table>
+            <thead>
               <tr>
-                <td colSpan={5} className="muted">
-                  No campaigns yet.
-                </td>
+                <th>ID</th>
+                <th>Title</th>
+                <th>Credits</th>
+                <th>Status</th>
+                <th />
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {items.map((c) => (
+                <tr key={c.id}>
+                  <td>{c.id}</td>
+                  <td>{c.title}</td>
+                  <td>{c.fundAmountCredits}</td>
+                  <td>{c.status}</td>
+                  <td>
+                    {c.status === 'draft' ? (
+                      <button type="button" onClick={() => fund(c.id)}>
+                        Fund
+                      </button>
+                    ) : (
+                      <span className="muted">Funded</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {items.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="muted">
+                    No campaigns yet.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </section>
     </div>
   );

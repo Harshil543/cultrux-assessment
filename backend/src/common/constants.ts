@@ -17,6 +17,8 @@ export type CurrencyCode = (typeof CURRENCY_CODES)[keyof typeof CURRENCY_CODES];
 export const LEDGER_ENTRY_TYPES = {
   PURCHASE: 'PURCHASE',
   SPEND: 'SPEND',
+  REFUND: 'REFUND',
+  CHARGEBACK: 'CHARGEBACK',
 } as const;
 
 export type LedgerEntryType = (typeof LEDGER_ENTRY_TYPES)[keyof typeof LEDGER_ENTRY_TYPES];
@@ -25,6 +27,9 @@ export const PAYMENT_STATUS = {
   PENDING: 'pending',
   COMPLETED: 'completed',
   FAILED: 'failed',
+  EXPIRED: 'expired',
+  REFUNDED: 'refunded',
+  DISPUTED: 'disputed',
 } as const;
 
 export type PaymentStatus = (typeof PAYMENT_STATUS)[keyof typeof PAYMENT_STATUS];

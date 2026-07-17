@@ -1,65 +1,71 @@
 import React, { createContext, useContext, useMemo, useState } from 'react';
-import { api, getToken, setToken } from './api';
+import { api } from './api';
 
 type User = { id: number; email: string };
 
 type AuthContextValue = {
   user: User | null;
-  token: string | null;
+  isAuthenticated: boolean;
+  authReady: boolean;
   login: (email: string, password: string) => Promise<void>;
   signup: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [token, setTokenState] = useState<string | null>(getToken());
   const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
 
   React.useEffect(() => {
-    if (!token) {
-      setUser(null);
-      return;
-    }
+    // Migrate away from previous localStorage JWT approach
+    localStorage.removeItem('cultrux_token');
+
+    let cancelled = false;
     api<User>('/auth/me')
-      .then(setUser)
+      .then((me) => {
+        if (!cancelled) setUser(me);
+      })
       .catch(() => {
-        setToken(null);
-        setTokenState(null);
-        setUser(null);
+        if (!cancelled) setUser(null);
+      })
+      .finally(() => {
+        if (!cancelled) setAuthReady(true);
       });
-  }, [token]);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       user,
-      token,
+      isAuthenticated: !!user,
+      authReady,
       async login(email, password) {
-        const data = await api<{ token: string; user: User }>('/auth/login', {
+        const data = await api<{ user: User }>('/auth/login', {
           method: 'POST',
           body: JSON.stringify({ email, password }),
         });
-        setToken(data.token);
-        setTokenState(data.token);
         setUser(data.user);
       },
       async signup(email, password) {
-        const data = await api<{ token: string; user: User }>('/auth/signup', {
+        const data = await api<{ user: User }>('/auth/signup', {
           method: 'POST',
           body: JSON.stringify({ email, password }),
         });
-        setToken(data.token);
-        setTokenState(data.token);
         setUser(data.user);
       },
-      logout() {
-        setToken(null);
-        setTokenState(null);
-        setUser(null);
+      async logout() {
+        try {
+          await api('/auth/logout', { method: 'POST' });
+        } finally {
+          setUser(null);
+        }
       },
     }),
-    [token, user],
+    [user, authReady],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
