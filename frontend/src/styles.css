@@ -1,0 +1,148 @@
+:root {
+  font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+  color: #1a1f2b;
+  background: #f3f5f8;
+  line-height: 1.45;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.layout {
+  min-height: 100vh;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.5rem;
+  background: #132033;
+  color: #fff;
+}
+
+.brand {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.nav {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.nav a {
+  color: #d7e3f4;
+  text-decoration: none;
+}
+
+.main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.auth-card {
+  max-width: 420px;
+  margin: 4rem auto;
+  background: #fff;
+  padding: 1.5rem;
+  border: 1px solid #d9dee7;
+}
+
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.gap-lg {
+  gap: 1.5rem;
+}
+
+.row {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.row.between {
+  justify-content: space-between;
+}
+
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.95rem;
+}
+
+input,
+select,
+button {
+  font: inherit;
+  padding: 0.55rem 0.7rem;
+}
+
+button {
+  cursor: pointer;
+  background: #1f4b99;
+  color: #fff;
+  border: none;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.panel {
+  background: #fff;
+  border: 1px solid #d9dee7;
+  padding: 1rem;
+}
+
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.big {
+  font-size: 1.8rem;
+  font-weight: 700;
+  margin: 0.35rem 0;
+}
+
+.muted {
+  color: #667285;
+  font-size: 0.9rem;
+}
+
+.error {
+  color: #a12020;
+}
+
+.info {
+  color: #1f4b99;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+}
+
+th,
+td {
+  border-bottom: 1px solid #e4e8ef;
+  text-align: left;
+  padding: 0.6rem;
+  font-size: 0.92rem;
+}

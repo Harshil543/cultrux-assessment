@@ -1,0 +1,5 @@
+CREATE DATABASE IF NOT EXISTS cultrux;
+CREATE DATABASE IF NOT EXISTS cultrux_test;
+GRANT ALL PRIVILEGES ON cultrux.* TO 'cultrux'@'%';
+GRANT ALL PRIVILEGES ON cultrux_test.* TO 'cultrux'@'%';
+FLUSH PRIVILEGES;
