@@ -1,6 +1,8 @@
 # DESIGN.md
 
-Short design notes for the multi-currency credits wallet and campaign funding slice.
+Design notes for the multi-currency credits wallet + campaign funding slice.
+Correctness goal: credits are never lost, double-granted, over-spent, spent in the
+wrong module, or granted without a real payment — and every balance traces to the ledger.
 
 ## Schema (ER)
 
@@ -12,12 +14,18 @@ users 1──1 wallets 1──* wallet_balances *──1 currencies 1──* cur
 users 1──* payments *──1 currencies
 users 1──* campaigns
 
-stripe_webhook_events (stripe_event_id UNIQUE)
+stripe_webhook_events   (dedupe log, stripe_event_id UNIQUE)
 ```
 
-### Currencies & module binding
+- **wallets** — one per user (created at signup with zero balances for every active currency).
+- **wallet_balances** — cached balance per `(wallet, currency)`.
+- **ledger_entries** — append-only source of truth; balance always equals `SUM(delta_credits)`.
+- **payments** — one row per checkout attempt; state machine below.
+- **campaigns** — funded once, from Campaign Credits only.
 
-`currencies` is seeded/configurable data (not hardcoded spend rules beyond “look up module”):
+### Three currencies & module binding
+
+Currencies are **seeded data**, not hardcoded logic. Each is bound to one module:
 
 | code | module | per_credit_paise |
 |------|--------|------------------|
@@ -25,93 +33,101 @@ stripe_webhook_events (stripe_event_id UNIQUE)
 | REPORT | reports | 1000 |
 | DISCOVERY | discovery | 500 |
 
-Campaign funding loads the currency bound to `module = campaigns` (or rejects an explicit non-campaign `currencyId`). Reports/Discovery spend can reuse the same pattern later.
+Spend rules resolve the currency by module (e.g. campaign funding loads
+`module = campaigns`) rather than trusting a client-supplied `currencyId`. Adding a
+module = seed a row; no code change. Reports/Discovery spends can reuse the same pattern.
 
 ### Money & credits
 
-- Prices: integer **paise**
-- Balances / ledger deltas: integer **credits**
-- No floating-point money math
-
-### Important constraints
-
-| Table | Constraint | Why |
-|-------|------------|-----|
-| `wallet_balances` | `UNIQUE(wallet_id, currency_id)` | One balance row per currency |
-| `wallet_balances` | `CHECK (balance_credits >= 0)` | DB-level non-negative |
-| `ledger_entries` | `UNIQUE(reference_type, reference_id, currency_id, entry_type)` | One PURCHASE per payment; one SPEND per campaign |
-| `payments` | `UNIQUE(stripe_session_id)` | Tie session → payment |
-| `stripe_webhook_events` | `UNIQUE(stripe_event_id)` | Duplicate webhooks are no-ops |
-
-Ledger is the audit trail; balances are updated **in the same transaction** as the ledger insert.
+- Prices in integer **paise** (₹1 = 100); balances/deltas in integer **credits**. No floats.
 
 ## Idempotency & transactions
 
-### Buy credits (webhook grant)
+Every money mutation is one `sequelize.transaction` with a row lock, so ledger insert +
+balance update commit together (or not at all).
 
-**Boundary:** single DB transaction in `CheckoutService.grantCreditsFromCheckoutSession`.
+### Columns / constraints that enforce invariants
 
-1. Insert `stripe_webhook_events` — if unique violation → return `duplicate_event`, no grant  
-2. Lock payment by `stripe_session_id` / metadata `paymentId`  
-3. If already `completed` → no-op  
-4. Lock `wallet_balances` (`SELECT … FOR UPDATE`)  
-5. Insert ledger `PURCHASE` (`reference_type=payment`, `reference_id=payment.id`)  
-6. Increment balance  
-7. Mark payment `completed`
+| Table | Constraint | Protects against |
+|-------|------------|------------------|
+| `stripe_webhook_events` | `UNIQUE(stripe_event_id)` | Duplicate webhook delivery |
+| `ledger_entries` | `UNIQUE(reference_type, reference_id, currency_id, entry_type)` | Double PURCHASE/SPEND/REFUND/CHARGEBACK per reference |
+| `payments` | `UNIQUE(stripe_session_id)`, `UNIQUE(stripe_payment_intent_id)` | Session/intent → one payment |
+| `payments` | `UNIQUE(user_id, client_idempotency_key)` | Client retrying "Pay" (double-submit) |
+| `wallet_balances` | `UNIQUE(wallet_id, currency_id)` | Duplicate balance rows |
 
-Forged webhooks are rejected in the controller via `stripe.webhooks.constructEvent` before any DB write.
+Note: the DB-level `CHECK (balance_credits >= 0)` was **intentionally dropped** — a
+refund/chargeback after the credits were already spent must still reverse the full
+purchase in the ledger, so a balance may legitimately go negative. Ledger accuracy
+(`balance == SUM(ledger)`) takes priority over a non-negative display value. Overspend on
+the *spend* path is still prevented in-code (balance check under lock), so users cannot
+drive their own balance negative.
 
-Browser success URL only shows a message; it never grants credits.
+### Transaction boundaries
 
-### Fund campaign
+- `CheckoutService.grantCreditsFromCheckoutSession` — webhook credit grant
+- `CheckoutService.markCheckoutSessionTerminal` — failed / expired
+- `CheckoutService.reverseCreditsForPayment` — refund / chargeback
+- `CampaignService.fund` — campaign spend
 
-**Boundary:** single transaction in `CampaignService.fund`.
+### Payment state machine
 
-1. Resolve Campaign Credits currency (`code=CAMPAIGN`, `module=campaigns`); reject wrong `currencyId`  
-2. Lock campaign row for user — reject if already funded  
-3. Lock campaign balance row  
-4. Reject if `balance < fund_amount` (no writes)  
-5. Insert ledger `SPEND` (`reference_type=campaign`)  
-6. Decrement balance  
-7. Set `status=funded`, `funded_at=now`
-
-Concurrent fund requests serialize on the locked rows; the second sees insufficient credits or already-funded / unique ledger reference.
+`pending → completed` (paid) · `pending → failed | expired` · `completed → refunded | disputed`.
+Transitions are guarded by current status, so out-of-order events can't corrupt state.
 
 ## Flow walkthroughs
 
-### Buy credits — failure points
+### Buy credits
 
-| Failure | Handling |
-|---------|----------|
-| Bad/missing signature | 401, no DB touch |
-| Duplicate event id | Unique insert fails → no second grant |
-| Late webhook after already completed | Detected via payment status / ledger unique |
-| Session not `paid` | No grant |
-| Stripe retries | Same event id → idempotent |
+Client `POST /checkout/sessions` (optional `Idempotency-Key`) → Stripe Checkout →
+Stripe webhook grants credits. **The browser success redirect never grants** — only a
+verified webhook does.
 
-### Fund campaign — failure points
+| Failure point | How the design upholds it |
+|---------------|---------------------------|
+| Forged / unsigned webhook | `constructEvent` verifies the signature on the **raw body** before any DB access → 401 |
+| Session not `paid` | Early return `session_not_paid`, no grant |
+| Duplicate event | `UNIQUE(stripe_event_id)` insert fails → `duplicate_event` |
+| Same payment, different event id | `payments.status == completed` + unique PURCHASE ledger ref → grant once |
+| Late webhook after fail/expire | Allowed to still grant (settlement wins); late fail after completed is a no-op |
+| Double-clicked "Pay" | `UNIQUE(user_id, client_idempotency_key)` reuses the same payment / open session |
+| Refund / chargeback | REFUND / CHARGEBACK ledger entry reverses the purchase; payment → refunded/disputed |
 
-| Failure | Handling |
-|---------|----------|
-| Wrong currency | Validation before spend |
-| Insufficient credits | 409, ledger/balance untouched |
-| Already funded | Conflict / unique spend reference |
-| Two parallel funds | Row locks + balance check → one wins |
+### Fund campaign
+
+Client `POST /campaigns/:id/fund`. Runs in one transaction:
+
+1. Resolve Campaign Credits (`code=CAMPAIGN`, `module=campaigns`); reject any other `currencyId`.
+2. Lock campaign row → reject if already funded.
+3. Lock balance row (`SELECT … FOR UPDATE`).
+4. Reject if `balance < fundAmount` — **before** any write, so balance/ledger stay untouched.
+5. Insert `SPEND` ledger entry, decrement balance, mark funded.
+
+| Failure point | How the design upholds it |
+|---------------|---------------------------|
+| Wrong-currency spend | Rejected before the transaction |
+| Insufficient credits | 409 before any write |
+| Already funded | Status check + unique SPEND reference |
+| Concurrent funds | Row lock serializes them; the second sees the updated balance and fails |
 
 ## Acceptance mapping
 
-- Balance equals ledger sum for that currency (updated atomically with each entry)  
-- Grant once per payment, correct currency/qty, webhook-only  
-- Campaign spends only Campaign Credits  
-- Never negative; fund at most once  
-- Wallet/campaign routes behind JWT  
+- `balance == SUM(ledger)` per currency, updated atomically — verifiable via `GET /wallet/reconcile`.
+- Credits granted exactly once, correct currency/qty, webhook-only.
+- Campaign spends Campaign Credits only; funded at most once.
+- Wallet/campaign routes behind auth (HTTP-only cookie; Bearer fallback for scripts/tests).
 
-## What I’d improve / didn’t prioritize
+Tests: duplicate webhook, signed HTTP webhook (bad-sig rejected + grant/expire), checkout
+idempotency, refund/chargeback + reconcile, insufficient/concurrent/wrong-currency funding.
 
-- Stripe Customer + receipt emails; chargeback/refund reversing ledger entries  
-- Outbox / metrics for webhook processing failures  
-- Redis locks only if we outgrow row-level MySQL locks  
-- Stronger property tests that assert `SUM(ledger) = balance` after every mutation  
-- Frontend polish and E2E against Stripe CLI in CI  
+## What I'd improve / didn't have time for
+
+All required behaviour (webhook-only grants, idempotency, out-of-order safety, signature
+verification, wrong-currency/insufficient/concurrent spend protection) is implemented and
+tested. Remaining items are enhancements, not gaps in the assignment:
+
+- **Scheduled reconciliation** — `/wallet/reconcile` runs on demand; no background job yet that
+  periodically asserts `balance == SUM(ledger)` and alerts on drift.
+- **E2E in CI** — tests are service-level + signed HTTP (supertest); no full Stripe-CLI run in CI.
 
 Schema uses Sequelize **migrations only** (no `sequelize.sync()`).
